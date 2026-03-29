@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Web VS Code</title>
+<style>
+:root {
+  --tb-bg: #323233; --tb-border: #252526; --btn-bg: #0e639c; --btn-hover: #1177bb;
+  --sel-bg: #3c3c3c; --sel-color: #ccc; --sel-border: #3c3c3c;
+  --sb-bg: #007acc; --name-color: #ccc; --body-bg: #1e1e1e;
+}
+html.light {
+  --tb-bg: #f3f3f3; --tb-border: #e0e0e0; --btn-bg: #007acc; --btn-hover: #0581c9;
+  --sel-bg: #fff; --sel-color: #333; --sel-border: #ccc;
+  --sb-bg: #007acc; --name-color: #555; --body-bg: #fffffe;
+}
+html.hc {
+  --tb-bg: #000; --tb-border: #6fc3df; --btn-bg: #000; --btn-hover: #f38518;
+  --sel-bg: #000; --sel-color: #fff; --sel-border: #6fc3df;
+  --sb-bg: #000; --name-color: #fff; --body-bg: #000;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  display: flex; flex-direction: column; height: 100vh;
+  background: var(--body-bg); color: #ccc; font-family: 'Segoe UI', sans-serif;
+}
+
+/* Loading 覆盖 */
+#loading {
+  position: fixed; inset: 0; z-index: 100;
+  background: #1e1e1e; display: flex; flex-direction: column;
+  justify-content: center; align-items: center; color: #ccc; font-size: 16px;
+  transition: opacity 0.3s;
+}
+#loading.hidden { opacity: 0; pointer-events: none; }
+#loading .spinner {
+  width: 32px; height: 32px; border: 3px solid #333;
+  border-top-color: #007acc; border-radius: 50%;
+  animation: spin 0.8s linear infinite; margin-bottom: 16px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 12px; background: var(--tb-bg); border-bottom: 1px solid var(--tb-border);
+  min-height: 36px; flex-shrink: 0;
+}
+.toolbar button {
+  background: var(--btn-bg); color: #fff; border: none; padding: 3px 12px;
+  border-radius: 3px; cursor: pointer; font-size: 12px; white-space: nowrap;
+  transition: background 0.15s;
+}
+.toolbar button:hover { background: var(--btn-hover); }
+.toolbar button.active { opacity: 1; outline: 1px solid #fff3; }
+.toolbar select {
+  background: var(--sel-bg); color: var(--sel-color); border: 1px solid var(--sel-border);
+  padding: 3px 6px; border-radius: 3px; font-size: 12px; cursor: pointer;
+}
+.toolbar .file-name {
+  color: var(--name-color); font-size: 12px; margin-left: auto; opacity: 0.8;
+  max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.toolbar .modified-dot {
+  color: #e2c08d; margin-right: 2px; display: none;
+}
+
+#editor-container { flex: 1; overflow: hidden; position: relative; }
+
+.drop-overlay {
+  display: none; position: absolute; inset: 0; z-index: 10;
+  background: rgba(0, 122, 204, 0.15);
+  border: 3px dashed #007acc; border-radius: 4px;
+  justify-content: center; align-items: center;
+  font-size: 22px; color: #007acc; pointer-events: none;
+}
+.drop-overlay.visible { display: flex; }
+
+.statusbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 12px; background: var(--sb-bg); color: #fff; font-size: 12px; height: 24px;
+  flex-shrink: 0;
+}
+.statusbar .status-left, .statusbar .status-right {
+  display: flex; gap: 16px; align-items: center;
+}
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <span>正在加载编辑器...</span>
+</div>
+
+<div class="toolbar">
+  <button id="btn-new" title="新建文件 (Ctrl+N)">📄 新建</button>
+  <button id="btn-open" title="打开文件 (可拖拽)">📂 打开</button>
+  <button id="btn-save" title="保存 (Ctrl+S)">💾 保存</button>
+  <span style="width:1px;height:20px;background:var(--sel-border);flex-shrink:0"></span>
+  <button id="btn-undo" title="撤销 (Ctrl+Z)">↩ 撤销</button>
+  <button id="btn-redo" title="重做 (Ctrl+Shift+Z)">↪ 重做</button>
+  <select id="lang-select" title="语言模式">
+    <option value="javascript">JavaScript</option>
+    <option value="typescript">TypeScript</option>
+    <option value="python">Python</option>
+    <option value="html">HTML</option>
+    <option value="css">CSS</option>
+    <option value="json">JSON</option>
+    <option value="java">Java</option>
+    <option value="cpp">C/C++</option>
+    <option value="csharp">C#</option>
+    <option value="go">Go</option>
+    <option value="rust">Rust</option>
+    <option value="sql">SQL</option>
+    <option value="markdown">Markdown</option>
+    <option value="shell">Shell</option>
+    <option value="xml">XML</option>
+    <option value="yaml">YAML</option>
+    <option value="php">PHP</option>
+    <option value="ruby">Ruby</option>
+    <option value="plaintext">纯文本</option>
+  </select>
+  <select id="theme-select" title="主题">
+    <option value="vs-dark">深色</option>
+    <option value="vs">浅色</option>
+    <option value="hc-black">高对比</option>
+  </select>
+  <button id="btn-wrap" title="自动换行 (Alt+Z)">↩</button>
+  <span class="file-name" id="file-name"><span class="modified-dot" id="mod-dot">● </span>untitled</span>
+</div>
+
+<div id="editor-container">
+  <div class="drop-overlay" id="drop-overlay">📂 释放以打开文件</div>
+</div>
+
+<div class="statusbar">
+  <div class="status-left">
+    <span id="status-pos">行 1, 列 1</span>
+    <span id="status-selection"></span>
+  </div>
+  <div class="status-right">
+    <span id="status-indent">空格: 2</span>
+    <span id="status-encoding">UTF-8</span>
+    <span id="status-lang">JavaScript</span>
+  </div>
+</div>
+
+<input type="file" id="file-input" style="display:none" accept="*/*">
+
+<!-- 全局拦截 Ctrl+S 浏览器默认行为 -->
+<script>
+document.addEventListener('keydown', function (e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+  }
+}, true);
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
+<script>
+let editor;
+let currentFileName = 'untitled';
+let isModified = false;
+let wordWrap = false;
+let fontSize = 14;
+const MIN_FONT = 10, MAX_FONT = 40;
+const LS_FONT = 'wvscode-fontSize';
+const LS_THEME = 'wvscode-theme';
+const LS_WRAP = 'wvscode-wordWrap';
+
+// 从 localStorage 恢复偏好
+try {
+  const saved = localStorage.getItem(LS_FONT);
+  if (saved) fontSize = Math.max(MIN_FONT, Math.min(MAX_FONT, parseInt(saved)));
+} catch(e) {}
+
+require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs' } });
+
+require(['vs/editor/editor.main'], function () {
+
+  // ---- 隐藏 loading ----
+  const loadingEl = document.getElementById('loading');
+  loadingEl.classList.add('hidden');
+  setTimeout(() => loadingEl.remove(), 300);
+
+  // ---- 主题 ----
+  monaco.editor.defineTheme('my-dark', {
+    base: 'vs-dark', inherit: true,
+    rules: [
+      { token: 'keyword', foreground: '569cd6', fontStyle: 'bold' },
+      { token: 'keyword.control', foreground: 'c586c0' },
+      { token: 'string', foreground: 'ce9178' },
+      { token: 'string.escape', foreground: 'd7ba7d' },
+      { token: 'comment', foreground: '6a9955', fontStyle: 'italic' },
+      { token: 'number', foreground: 'b5cea8' },
+      { token: 'type', foreground: '4ec9b0' },
+      { token: 'function', foreground: 'dcdcaa' },
+      { token: 'variable', foreground: '9cdcfe' },
+      { token: 'constant', foreground: '4fc1ff' },
+      { token: 'delimiter', foreground: 'd4d4d4' },
+      { token: 'tag', foreground: '569cd6' },
+      { token: 'attribute.name', foreground: '9cdcfe' },
+      { token: 'attribute.value', foreground: 'ce9178' },
+    ],
+    colors: {
+      'editor.background': '#1e1e1e', 'editor.foreground': '#d4d4d4',
+      'editorLineNumber.foreground': '#858585', 'editorLineNumber.activeForeground': '#c6c6c6',
+      'editor.selectionBackground': '#264f78', 'editor.lineHighlightBackground': '#2a2d2e',
+      'editorCursor.foreground': '#aeafad',
+      'editorBracketMatch.background': '#0064001a', 'editorBracketMatch.border': '#888888',
+      'editorBracketHighlight.foreground1': '#ffd700',
+      'editorBracketHighlight.foreground2': '#da70d6',
+      'editorBracketHighlight.foreground3': '#179fff',
+      'editor.findMatchBackground': '#515c6a', 'editor.findMatchHighlightBackground': '#ea5c0055',
+      'minimap.background': '#1e1e1e',
+      'editor.foldBackground': '#264f7833',
+    }
+  });
+
+  // ---- 恢复主题 ----
+  let savedTheme = 'vs-dark';
+  try { savedTheme = localStorage.getItem(LS_THEME) || 'vs-dark'; } catch(e) {}
+  document.getElementById('theme-select').value = savedTheme;
+  if (savedTheme === 'vs') document.documentElement.classList.add('light');
+  else if (savedTheme === 'hc-black') document.documentElement.classList.add('hc');
+
+  // ---- 恢复换行 ----
+  let savedWrap = false;
+  try { savedWrap = localStorage.getItem(LS_WRAP) === 'true'; } catch(e) {}
+  wordWrap = savedWrap;
+  document.getElementById('btn-wrap').style.opacity = savedWrap ? '1' : '0.45';
+  if (savedWrap) document.getElementById('btn-wrap').classList.add('active');
+
+  // ---- 创建编辑器 ----
+  editor = monaco.editor.create(document.getElementById('editor-container'), {
+    value: '// 欢迎使用 Web VS Code\n// 快捷键:\n//   Ctrl+F 搜索  |  Ctrl+H 替换\n//   Ctrl+S 保存  |  Ctrl+N 新建\n//   Ctrl+=/- 缩放  |  Ctrl+滚轮 缩放\n//   Alt+Z 换行  |  Ctrl+/ 注释\n//   F1 全部命令\n\nfunction hello(name) {\n  console.log(`Hello, ${name}!`);\n}\n\nhello("World");\n',
+    language: 'javascript',
+    theme: savedTheme === 'vs-dark' ? 'my-dark' : savedTheme,
+    fontSize: fontSize,
+    fontFamily: "'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace",
+    fontLigatures: true, minimap: { enabled: true, scale: 1 }, automaticLayout: true,
+    bracketPairColorization: { enabled: true },
+    guides: { bracketPairs: true, indentation: true, highlightActiveIndentation: true },
+    bracketPairGuides: { enabled: true, highlightActiveGuide: true },
+    wordWrap: wordWrap ? 'on' : 'off',
+    lineNumbers: 'on', renderWhitespace: 'selection',
+    smoothScrolling: true, cursorBlinking: 'smooth', cursorSmoothCaretAnimation: 'on',
+    suggest: { showKeywords: true, showSnippets: true },
+    quickSuggestions: true, tabSize: 2,
+    formatOnPaste: true, scrollBeyondLastLine: false,
+    folding: true, foldingHighlight: true, foldingStrategy: 'auto',
+    showFoldingControls: 'mouseover',
+    matchBrackets: 'always',
+    autoClosingBrackets: 'always', autoClosingQuotes: 'always',
+    autoSurround: 'languageDefined',
+    snippetSuggestions: 'top',
+    padding: { top: 8 },
+  });
+
+  // ---- 修改状态 ----
+  editor.onDidChangeModelContent(function () {
+    if (!isModified) {
+      isModified = true;
+      document.getElementById('mod-dot').style.display = 'inline';
+    }
+    debouncedDetectIndent();
+  });
+
+  function clearModified() {
+    isModified = false;
+    document.getElementById('mod-dot').style.display = 'none';
+  }
+
+  // ---- 关闭提醒 ----
+  window.addEventListener('beforeunload', function (e) {
+    if (isModified) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  // ---- 光标位置 + 选区统计 ----
+  editor.onDidChangeCursorPosition(function (e) {
+    const pos = e.position;
+    document.getElementById('status-pos').textContent = `行 ${pos.lineNumber}, 列 ${pos.column}`;
+  });
+
+  editor.onDidChangeCursorSelection(function (e) {
+    const sel = e.selection;
+    const el = document.getElementById('status-selection');
+    if (sel.isEmpty()) {
+      el.textContent = '';
+    } else {
+      const model = editor.getModel();
+      const selectedText = model.getValueInRange(sel);
+      const lines = selectedText.split('\n').length;
+      const chars = selectedText.length;
+      el.textContent = lines > 1 ? `已选 ${lines} 行, ${chars} 字符` : `已选 ${chars} 字符`;
+    }
+  });
+
+  // ---- 缩进检测（防抖 500ms） ----
+  let indentTimer = null;
+  function debouncedDetectIndent() {
+    if (indentTimer) clearTimeout(indentTimer);
+    indentTimer = setTimeout(detectIndentation, 500);
+  }
+
+  function detectIndentation() {
+    const model = editor.getModel();
+    if (!model) return;
+    const detected = model.detectIndentation ? model.detectIndentation(true) : null;
+    const el = document.getElementById('status-indent');
+    if (detected && detected.insertSpaces) {
+      el.textContent = `空格: ${detected.tabSize}`;
+    } else if (detected) {
+      el.textContent = `Tab: ${detected.tabSize}`;
+    }
+  }
+
+  // ---- 字号缩放 ----
+  function setFontSize(size) {
+    fontSize = Math.max(MIN_FONT, Math.min(MAX_FONT, size));
+    editor.updateOptions({ fontSize: fontSize });
+    try { localStorage.setItem(LS_FONT, fontSize); } catch(e) {}
+  }
+
+  document.getElementById('editor-container').addEventListener('wheel', function (e) {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      setFontSize(fontSize + (e.deltaY < 0 ? 1 : -1));
+    }
+  }, { passive: false });
+
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Equal, () => setFontSize(fontSize + 1));
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.NumpadAdd, () => setFontSize(fontSize + 1));
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Minus, () => setFontSize(fontSize - 1));
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.NumpadSubtract, () => setFontSize(fontSize - 1));
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Digit0, () => setFontSize(14));
+
+  // ---- 语言切换 ----
+  document.getElementById('lang-select').addEventListener('change', function () {
+    monaco.editor.setModelLanguage(editor.getModel(), this.value);
+    updateStatusLang();
+  });
+
+  // ---- 主题切换 ----
+  document.getElementById('theme-select').addEventListener('change', function () {
+    const v = this.value;
+    const html = document.documentElement;
+    html.classList.remove('light', 'hc');
+    if (v === 'vs') html.classList.add('light');
+    else if (v === 'hc-black') html.classList.add('hc');
+    monaco.editor.setTheme(v === 'vs-dark' ? 'my-dark' : v);
+    try { localStorage.setItem(LS_THEME, v); } catch(e) {}
+  });
+
+  // ---- 换行切换 ----
+  document.getElementById('btn-wrap').addEventListener('click', toggleWrap);
+  editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.KeyZ, toggleWrap);
+
+  function toggleWrap() {
+    wordWrap = !wordWrap;
+    editor.updateOptions({ wordWrap: wordWrap ? 'on' : 'off' });
+    const btn = document.getElementById('btn-wrap');
+    btn.style.opacity = wordWrap ? '1' : '0.45';
+    btn.classList.toggle('active', wordWrap);
+    try { localStorage.setItem(LS_WRAP, wordWrap); } catch(e) {}
+  }
+
+  // ---- Ctrl+S 保存 ----
+  document.getElementById('btn-save').addEventListener('click', saveFile);
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveFile);
+
+  // ---- 撤销 / 重做 ----
+  document.getElementById('btn-undo').addEventListener('click', function () {
+    editor.trigger('toolbar', 'undo');
+    editor.focus();
+  });
+  document.getElementById('btn-redo').addEventListener('click', function () {
+    editor.trigger('toolbar', 'redo');
+    editor.focus();
+  });
+
+  // ---- 文件操作 ----
+  const langExt = {
+    javascript: '.js', typescript: '.ts', python: '.py', html: '.html',
+    css: '.css', json: '.json', java: '.java', cpp: '.cpp',
+    csharp: '.cs', go: '.go', rust: '.rs', sql: '.sql',
+    markdown: '.md', shell: '.sh', xml: '.xml', yaml: '.yaml',
+    php: '.php', ruby: '.rb', plaintext: '.txt'
+  };
+
+  const validLangs = new Set(Object.keys(langExt));
+
+  const extLang = {
+    '.js': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
+    '.ts': 'typescript', '.tsx': 'typescript', '.mts': 'typescript',
+    '.py': 'python', '.pyw': 'python',
+    '.html': 'html', '.htm': 'html', '.vue': 'html', '.svelte': 'html',
+    '.css': 'css', '.scss': 'css', '.less': 'css',
+    '.json': 'json', '.jsonc': 'json',
+    '.java': 'java', '.kt': 'java', '.kts': 'java',
+    '.cpp': 'cpp', '.c': 'cpp', '.h': 'cpp', '.hpp': 'cpp', '.cc': 'cpp',
+    '.cs': 'csharp', '.go': 'go', '.rs': 'rust', '.sql': 'sql',
+    '.md': 'markdown', '.markdown': 'markdown',
+    '.sh': 'shell', '.bash': 'shell', '.zsh': 'shell',
+    '.xml': 'xml', '.svg': 'xml',
+    '.yaml': 'yaml', '.yml': 'yaml',
+    '.php': 'php', '.phtml': 'php',
+    '.rb': 'ruby', '.erb': 'ruby',
+  };
+
+  function openFileData(content, fileName) {
+    editor.setValue(content);
+    currentFileName = fileName;
+    clearModified();
+    const ext = '.' + fileName.split('.').pop().toLowerCase();
+    const lang = extLang[ext] || 'plaintext';
+    monaco.editor.setModelLanguage(editor.getModel(), lang);
+    const sel = document.getElementById('lang-select');
+    sel.value = validLangs.has(lang) ? lang : 'plaintext';
+    updateStatusLang();
+    debouncedDetectIndent();
+  }
+
+  // 新建
+  document.getElementById('btn-new').addEventListener('click', function () {
+    if (isModified && !confirm('当前文件未保存，确定新建吗？')) return;
+    editor.setValue('');
+    currentFileName = 'untitled';
+    clearModified();
+    monaco.editor.setModelLanguage(editor.getModel(), 'javascript');
+    document.getElementById('lang-select').value = 'javascript';
+    updateStatusLang();
+  });
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyN, function () {
+    document.getElementById('btn-new').click();
+  });
+
+  // 打开
+  document.getElementById('btn-open').addEventListener('click', () => {
+    document.getElementById('file-input').click();
+  });
+
+  document.getElementById('file-input').addEventListener('change', function (e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (isModified && !confirm('当前文件未保存，确定打开新文件吗？')) { this.value = ''; return; }
+    const reader = new FileReader();
+    reader.onload = function (ev) { openFileData(ev.target.result, file.name); };
+    reader.readAsText(file, 'UTF-8');
+    this.value = '';
+  });
+
+  // ---- 拖拽 ----
+  const container = document.getElementById('editor-container');
+  const dropOverlay = document.getElementById('drop-overlay');
+  let dragCounter = 0;
+
+  container.addEventListener('dragenter', function (e) {
+    e.preventDefault();
+    dragCounter++;
+    dropOverlay.classList.add('visible');
+  });
+  container.addEventListener('dragleave', function (e) {
+    e.preventDefault();
+    dragCounter--;
+    if (dragCounter <= 0) { dragCounter = 0; dropOverlay.classList.remove('visible'); }
+  });
+  container.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+  container.addEventListener('drop', function (e) {
+    e.preventDefault();
+    dragCounter = 0;
+    dropOverlay.classList.remove('visible');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    if (isModified && !confirm('当前文件未保存，确定打开新文件吗？')) return;
+    const reader = new FileReader();
+    reader.onload = function (ev) { openFileData(ev.target.result, file.name); };
+    reader.readAsText(file, 'UTF-8');
+  });
+
+  // ---- 保存 ----
+  function saveFile() {
+    const content = editor.getValue();
+    const lang = editor.getModel().getLanguageId();
+    const ext = langExt[lang] || '.txt';
+    const name = currentFileName === 'untitled' ? 'untitled' + ext : currentFileName;
+    const blob = new Blob(['\uFEFF' + content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    clearModified();
+  }
+
+  // ---- 状态栏语言 ----
+  function updateStatusLang() {
+    const lang = editor.getModel().getLanguageId();
+    const names = {
+      javascript: 'JavaScript', typescript: 'TypeScript', python: 'Python',
+      html: 'HTML', css: 'CSS', json: 'JSON', java: 'Java',
+      cpp: 'C/C++', csharp: 'C#', go: 'Go', rust: 'Rust',
+      sql: 'SQL', markdown: 'Markdown', shell: 'Shell', xml: 'XML',
+      yaml: 'YAML', php: 'PHP', ruby: 'Ruby', plaintext: '纯文本'
+    };
+    document.getElementById('status-lang').textContent = names[lang] || lang;
+  }
+  updateStatusLang();
+  detectIndentation();
+});
+</script>
+</body>
+</html>
