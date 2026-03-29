@@ -308,6 +308,7 @@ if (isMobile) {
 } else {
 // ===== 桌面端 Monaco Editor =====
 
+require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs' } });
 require(['vs/editor/editor.main'], function () {
 
   // ---- 隐藏 loading ----
